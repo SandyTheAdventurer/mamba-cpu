@@ -1,0 +1,47 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.4"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "mamba-cpu"
+version = "0.1.0.dev0"
+description = "Multithreaded CPU kernels for Mamba selective state space models, API-compatible with mamba_ssm"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ["torch>=2.4"]
+keywords = ["mamba", "ssm", "state-space-model", "selective-scan", "pytorch", "cpu"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+build-dir = "build/{wheel_tag}"
+cmake.build-type = "Release"
+wheel.packages = ["src/mamba_cpu"]
+# One abi3 wheel covers CPython 3.12+; 3.10/3.11 get version-specific wheels.
+wheel.py-api = "cp312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.cibuildwheel]
+build = ["cp310-*", "cp311-*", "cp312-*"]
+# No torch wheels exist for musllinux / 32-bit targets.
+skip = ["*-musllinux_*", "*-win32", "*_i686"]
+# Install CPU-only torch before the wheel so pip doesn't pull the CUDA build.
+before-test = "pip install torch --index-url https://download.pytorch.org/whl/cpu"
+test-requires = ["pytest"]
+test-command = "pytest {project}/tests -q"
+
+[tool.cibuildwheel.macos]
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
