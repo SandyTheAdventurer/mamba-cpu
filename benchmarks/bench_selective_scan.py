@@ -30,6 +30,7 @@ def main():
     p.add_argument("--dstate", type=int, default=16)
     p.add_argument("--threads", type=int, default=None)
     p.add_argument("--skip-ref", action="store_true")
+    p.add_argument("--backward", action="store_true", help="time forward + backward")
     args = p.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
@@ -43,15 +44,21 @@ def main():
     D = torch.randn(d)
     z = torch.randn(b, d, l)
     bias = torch.rand(d) * 0.1
-    inputs = (u, delta, A, B, C, D, z, bias, True)
+    tensors = [u, delta, A, B, C, D, z, bias]
 
-    print(f"shape b={b} d={d} l={l} n={n}, threads={torch.get_num_threads()}")
-    with torch.no_grad():
-        t_native = bench(lambda: selective_scan_fn(*inputs))
-        print(f"mamba_cpu  : {t_native * 1e3:9.2f} ms")
-        if not args.skip_ref:
-            t_ref = bench(lambda: selective_scan_ref(*inputs))
-            print(f"reference  : {t_ref * 1e3:9.2f} ms  ({t_ref / t_native:.1f}x slower)")
+    def run(fn):
+        if not args.backward:
+            return torch.no_grad()(lambda: fn(*tensors, True))
+        leaves = [t.clone().requires_grad_() for t in tensors]
+        return lambda: fn(*leaves, True).sum().backward()
+
+    mode = "fwd+bwd" if args.backward else "fwd"
+    print(f"{mode}, shape b={b} d={d} l={l} n={n}, threads={torch.get_num_threads()}")
+    t_native = bench(run(selective_scan_fn))
+    print(f"mamba_cpu  : {t_native * 1e3:9.2f} ms")
+    if not args.skip_ref:
+        t_ref = bench(run(selective_scan_ref))
+        print(f"reference  : {t_ref * 1e3:9.2f} ms  ({t_ref / t_native:.1f}x slower)")
 
 
 if __name__ == "__main__":

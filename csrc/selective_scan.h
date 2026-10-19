@@ -32,4 +32,29 @@ struct SelectiveScanParams {
 
 void selective_scan_fwd_f32(const SelectiveScanParams& p, int num_threads);
 
+// Backward pass. Reads the forward inputs plus:
+//   dout             : (batch, dim, seqlen)
+//   dlast_state      : (batch, dim, dstate), may be null
+// Writes:
+//   du, ddelta, dz   : (batch, dim, seqlen); dz only if z is non-null
+//   dB, dC           : (batch, ngroups, seqlen, dstate), must be zero-initialized
+//   dA_part          : (batch, dim, dstate)  -- per-batch partials, caller sums over batch
+//   dD_part          : (batch, dim)          -- "
+//   ddelta_bias_part : (batch, dim)          -- "
+struct SelectiveScanBwdParams {
+  SelectiveScanParams fwd;  // out and last_state are unused
+  const float* dout;
+  const float* dlast_state;
+  float* du;
+  float* ddelta;
+  float* dA_part;
+  float* dB;
+  float* dC;
+  float* dD_part;
+  float* dz;
+  float* ddelta_bias_part;
+};
+
+void selective_scan_bwd_f32(const SelectiveScanBwdParams& p, int num_threads);
+
 }  // namespace mamba_cpu

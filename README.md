@@ -42,7 +42,7 @@ Kernels use `torch.get_num_threads()` threads, so `torch.set_num_threads(n)` con
 
 | Op | Forward | Backward |
 |---|---|---|
-| `selective_scan_fn` | native C++, multithreaded | reference recompute (correct, slow) |
+| `selective_scan_fn` | native C++, multithreaded | native C++, multithreaded |
 | `selective_state_update` | PyTorch | n/a (inference) |
 | `causal_conv1d_fn` / `_update` | PyTorch (`F.conv1d`) | autograd |
 
@@ -50,7 +50,8 @@ Not supported yet: complex `A`, input-independent (2D) `B`/`C`, `seq_idx` in `ca
 
 ### Roadmap
 
-- [ ] Native backward for `selective_scan_fn`
+- [x] Native backward for `selective_scan_fn`
+- [ ] Chunked recompute in backward to bound memory for very long sequences
 - [ ] SIMD (vectorized `exp`, AVX2/NEON dispatch) and a persistent thread pool
 - [ ] Chunked parallel scan along time for small batch × long sequence
 - [ ] Mamba-2 SSD (`mamba_chunk_scan_combined`)

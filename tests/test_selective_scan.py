@@ -48,19 +48,60 @@ def test_low_precision_inputs(dtype):
     torch.testing.assert_close(out, out_ref, rtol=1e-2, atol=1e-2)
 
 
-@pytest.mark.parametrize("ngroups", [None, 2])
-def test_backward_matches_reference(ngroups):
-    inp = make_inputs(2, 8, 17, 4, ngroups, True, True, True, torch.float32, requires_grad=True)
-    out, last = selective_scan_fn(**inp, delta_softplus=True, return_last_state=True)
-    (out.square().sum() + last.sum()).backward()
-    grads = {k: v.grad.clone() for k, v in inp.items() if v is not None}
+def grads_of(fn, inp, loss_on, softplus):
     for v in inp.values():
         if v is not None:
             v.grad = None
-    out_ref, last_ref = selective_scan_ref(**inp, delta_softplus=True, return_last_state=True)
-    (out_ref.square().sum() + last_ref.sum()).backward()
-    for k, g in grads.items():
-        torch.testing.assert_close(g, inp[k].grad, rtol=1e-4, atol=1e-4, msg=k)
+    out, last = fn(**inp, delta_softplus=softplus, return_last_state=True)
+    loss = 0
+    if "out" in loss_on:
+        loss = loss + (out * torch.linspace(-1, 1, out.shape[-1])).square().sum()
+    if "last" in loss_on:
+        loss = loss + (last * last.detach().sign()).sum()
+    loss.backward()
+    # Inputs that don't affect the loss (e.g. C when only last_state is used) get no grad.
+    return {k: None if v.grad is None else v.grad.clone() for k, v in inp.items() if v is not None}
+
+
+@pytest.mark.parametrize("batch,dim,seqlen,dstate", [(1, 4, 1, 1), (2, 8, 17, 4), (2, 64, 96, 16)])
+@pytest.mark.parametrize("ngroups", [None, 2, 4])
+@pytest.mark.parametrize("has_D,has_z,has_bias,softplus", [
+    (False, False, False, False),
+    (True, True, True, True),
+    (True, False, False, True),
+])
+@pytest.mark.parametrize("loss_on", [("out", "last"), ("out",), ("last",)])
+def test_backward_matches_reference(batch, dim, seqlen, dstate, ngroups, has_D, has_z, has_bias, softplus, loss_on):
+    if ngroups is not None and dim % ngroups:
+        pytest.skip("dim not divisible by ngroups")
+    inp = make_inputs(batch, dim, seqlen, dstate, ngroups, has_D, has_z, has_bias, torch.float32, requires_grad=True)
+    got = grads_of(selective_scan_fn, inp, loss_on, softplus)
+    want = grads_of(selective_scan_ref, inp, loss_on, softplus)
+    for k in want:
+        if want[k] is None:
+            assert got[k] is None or not got[k].any(), k
+            continue
+        torch.testing.assert_close(got[k], want[k], rtol=1e-4, atol=1e-4, msg=lambda m: f"{k}: {m}")
+
+
+def test_backward_low_precision():
+    inp = make_inputs(2, 16, 32, 8, None, True, True, True, torch.bfloat16, requires_grad=True)
+    got = grads_of(selective_scan_fn, inp, ("out",), True)
+    want = grads_of(selective_scan_ref, inp, ("out",), True)
+    for k in want:
+        assert got[k].dtype == inp[k].dtype
+        torch.testing.assert_close(got[k], want[k], rtol=2e-2, atol=2e-2, msg=lambda m: f"{k}: {m}")
+
+
+def test_opcheck_bwd():
+    inp = make_inputs(2, 4, 8, 2, 2, True, True, True, torch.float32)
+    args = (
+        inp["u"], inp["delta"], inp["A"],
+        inp["B"].transpose(-1, -2).contiguous(), inp["C"].transpose(-1, -2).contiguous(),
+        inp["D"], inp["z"], inp["delta_bias"], True,
+        torch.randn(2, 4, 8), torch.randn(2, 4, 2),
+    )
+    torch.library.opcheck(torch.ops.mamba_cpu.selective_scan_bwd.default, args)
 
 
 def test_opcheck():

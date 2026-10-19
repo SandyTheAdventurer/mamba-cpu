@@ -3,7 +3,6 @@ from typing import Optional
 import torch
 
 from mamba_cpu import _C
-from mamba_cpu.reference import selective_scan_ref
 
 # The custom op takes kernel-ready inputs: float32, contiguous, with B and C laid
 # out as (batch, ngroups, seqlen, dstate). selective_scan_fn does the conversion,
@@ -46,6 +45,58 @@ def _(u, delta, A, B, C, D, z, delta_bias, delta_softplus):
     return torch.empty_like(u), u.new_empty(u.shape[0], u.shape[1], B.shape[-1])
 
 
+@torch.library.custom_op("mamba_cpu::selective_scan_bwd", mutates_args=(), device_types="cpu")
+def _selective_scan_bwd(
+    u: torch.Tensor,
+    delta: torch.Tensor,
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+    D: Optional[torch.Tensor],
+    z: Optional[torch.Tensor],
+    delta_bias: Optional[torch.Tensor],
+    delta_softplus: bool,
+    dout: torch.Tensor,
+    dlast_state: Optional[torch.Tensor],
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+]:
+    """Returns (du, ddelta, dA, dB, dC, dD, dz, ddelta_bias). dz is empty when z is None;
+    dD and ddelta_bias are always computed (they are cheap)."""
+    for t in (u, delta, A, B, C, D, z, delta_bias, dout, dlast_state):
+        if t is not None and (t.dtype != torch.float32 or not t.is_contiguous()):
+            raise ValueError("mamba_cpu::selective_scan_bwd expects contiguous float32 tensors")
+    batch, dim, seqlen = u.shape
+    ngroups, dstate = B.shape[1], B.shape[3]
+    du = torch.empty_like(u)
+    ddelta = torch.empty_like(delta)
+    dA_part = u.new_empty(batch, dim, dstate)
+    dB = torch.zeros_like(B)
+    dC = torch.zeros_like(C)
+    dD_part = u.new_empty(batch, dim)
+    dz = torch.empty_like(z) if z is not None else u.new_empty(0)
+    ddelta_bias_part = u.new_empty(batch, dim)
+    _C.selective_scan_bwd_f32(
+        _ptr(u), _ptr(delta), _ptr(A), _ptr(B), _ptr(C), _ptr(D), _ptr(z), _ptr(delta_bias),
+        _ptr(dout), _ptr(dlast_state),
+        _ptr(du), _ptr(ddelta), _ptr(dA_part), _ptr(dB), _ptr(dC), _ptr(dD_part),
+        _ptr(dz) if z is not None else 0, _ptr(ddelta_bias_part),
+        batch, dim, seqlen, dstate, ngroups, delta_softplus, torch.get_num_threads(),
+    )
+    return du, ddelta, dA_part.sum(0), dB, dC, dD_part.sum(0), dz, ddelta_bias_part.sum(0)
+
+
+@_selective_scan_bwd.register_fake
+def _(u, delta, A, B, C, D, z, delta_bias, delta_softplus, dout, dlast_state):
+    dim = u.shape[1]
+    return (
+        torch.empty_like(u), torch.empty_like(delta), torch.empty_like(A),
+        torch.empty_like(B), torch.empty_like(C), u.new_empty(dim),
+        torch.empty_like(z) if z is not None else u.new_empty(0), u.new_empty(dim),
+    )
+
+
 def _setup_context(ctx, inputs, output):
     u, delta, A, B, C, D, z, delta_bias, delta_softplus = inputs
     ctx.save_for_backward(u, delta, A, B, C, D, z, delta_bias)
@@ -53,33 +104,19 @@ def _setup_context(ctx, inputs, output):
 
 
 def _backward(ctx, grad_out, grad_last_state):
-    # TODO: native backward kernel. For now, recompute through the reference
-    # implementation and let autograd differentiate it (correct but slow).
-    saved = ctx.saved_tensors
-    grads = [None] * 9
-    with torch.enable_grad():
-        leaves = [
-            None if t is None else t.detach().requires_grad_(bool(needs))
-            for t, needs in zip(saved, ctx.needs_input_grad)
-        ]
-        u, delta, A, B, C, D, z, delta_bias = leaves
-        out, last_state = selective_scan_ref(
-            u, delta, A, B.transpose(-1, -2), C.transpose(-1, -2), D, z, delta_bias,
-            delta_softplus=ctx.delta_softplus, return_last_state=True,
-        )
-        wrt = [i for i, t in enumerate(leaves) if t is not None and t.requires_grad]
-        outputs, grad_outputs = [], []
-        for o, g in ((out, grad_out), (last_state, grad_last_state)):
-            if g is not None and o.requires_grad:
-                outputs.append(o)
-                grad_outputs.append(g)
-        if wrt and outputs:
-            computed = torch.autograd.grad(
-                outputs, [leaves[i] for i in wrt], grad_outputs, allow_unused=True
-            )
-            for i, g in zip(wrt, computed):
-                grads[i] = g
-    return tuple(grads)
+    u, delta, A, B, C, D, z, delta_bias = ctx.saved_tensors
+    dout = torch.zeros_like(u) if grad_out is None else grad_out.float().contiguous()
+    dlast = None if grad_last_state is None else grad_last_state.float().contiguous()
+    du, ddelta, dA, dB, dC, dD, dz, ddelta_bias = torch.ops.mamba_cpu.selective_scan_bwd(
+        u, delta, A, B, C, D, z, delta_bias, ctx.delta_softplus, dout, dlast
+    )
+    return (
+        du, ddelta, dA, dB, dC,
+        dD if D is not None else None,
+        dz if z is not None else None,
+        ddelta_bias if delta_bias is not None else None,
+        None,
+    )
 
 
 torch.library.register_autograd(
