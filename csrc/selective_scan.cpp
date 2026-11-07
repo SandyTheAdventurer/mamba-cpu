@@ -59,12 +59,14 @@ MAMBA_INLINE float bit_cast_float(int32_t bits) {
 // Branch-free expf (Cephes-style, ~1-2 ulp) built only from arithmetic and bit
 // casts, so loops calling it auto-vectorize.
 //
-// The range clamp is applied to the integer exponent, not to x: a float
-// ternary or fmin/fmax keeps GCC from vectorizing the loop (NaN/trapping
-// semantics), while integer min/max always vectorizes. Out of range, results
-// saturate to ~1e-38 / ~2^127 instead of 0 / inf. The scan only feeds it
-// dt*A <= 0, where flushing to ~1e-38 is harmless.
+// x must be clamped before range reduction: for huge |x| the reduction loses all
+// precision and the polynomial overflows, which turns a decay of ~0 into NaN.
+// GCC only vectorizes these float ternaries with -fno-trapping-math (see
+// CMakeLists.txt); without it the code is still correct, just scalar. Results
+// saturate to ~1e-38 / ~2^127 rather than 0 / inf, and NaN propagates.
 MAMBA_INLINE float exp_approx(float x) {
+  x = x < -87.f ? -87.f : x;
+  x = x > 88.f ? 88.f : x;
   // Round x*log2(e) to nearest via the 1.5*2^23 trick (no rounding intrinsic needed).
   const float fx = (x * 1.44269504088896341f + 12582912.f) - 12582912.f;
   const float r = x - fx * 0.693359375f + fx * 2.12194440e-4f;
@@ -75,10 +77,7 @@ MAMBA_INLINE float exp_approx(float x) {
   y = y * r + 1.6666665459e-1f;
   y = y * r + 5.0000001201e-1f;
   y = y * r * r + r + 1.f;
-  int32_t e = static_cast<int32_t>(fx);
-  e = e < -126 ? -126 : e;
-  e = e > 127 ? 127 : e;
-  return y * bit_cast_float((e + 127) << 23);
+  return y * bit_cast_float((static_cast<int32_t>(fx) + 127) * (1 << 23));
 }
 
 struct RowPtrs {

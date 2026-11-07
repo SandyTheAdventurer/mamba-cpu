@@ -20,10 +20,12 @@ target_link_libraries(_C PRIVATE Threads::Threads)
 # Wheels must run on any CPU of the target arch, so no -march=native here;
 # wider ISAs are selected at runtime (see csrc/selective_scan.cpp).
 # -fopenmp-simd only enables `#pragma omp simd`; no OpenMP runtime is linked.
+# -fno-trapping-math lets GCC vectorize the float clamps in exp_approx; it does
+# not change results, only whether FP exception flags are preserved.
 if(MSVC)
   target_compile_options(_C PRIVATE /O2 /fp:precise)
 else()
-  target_compile_options(_C PRIVATE -O3 -fopenmp-simd)
+  target_compile_options(_C PRIVATE -O3 -fopenmp-simd -fno-trapping-math)
 endif()
 
 install(TARGETS _C LIBRARY DESTINATION mamba_cpu)
