@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 
 def selective_state_update(
-    state, x, dt, A, B, C, D=None, z=None, dt_bias=None, dt_softplus=False
+    state, x, dt, A, B, C, D=None, z=None, dt_bias=None, dt_softplus=False, state_batch_indices=None
 ):
     """Single decode step of the selective scan. Updates state in place.
 
@@ -21,6 +21,8 @@ def selective_state_update(
         D, dt_bias: (nheads, headdim)
     Returns out shaped like x.
     """
+    if state_batch_indices is not None:
+        raise NotImplementedError("state_batch_indices is not supported yet")
     has_heads = state.dim() > 3
     if not has_heads:
         state = state.unsqueeze(1)
