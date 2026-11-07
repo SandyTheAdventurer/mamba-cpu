@@ -17,11 +17,13 @@ nanobind_add_module(_C STABLE_ABI NB_STATIC
 target_include_directories(_C PRIVATE csrc)
 target_link_libraries(_C PRIVATE Threads::Threads)
 
-# Wheels must run on any CPU of the target arch, so no -march=native here.
+# Wheels must run on any CPU of the target arch, so no -march=native here;
+# wider ISAs are selected at runtime (see csrc/selective_scan.cpp).
+# -fopenmp-simd only enables `#pragma omp simd`; no OpenMP runtime is linked.
 if(MSVC)
   target_compile_options(_C PRIVATE /O2 /fp:precise)
 else()
-  target_compile_options(_C PRIVATE -O3)
+  target_compile_options(_C PRIVATE -O3 -fopenmp-simd)
 endif()
 
 install(TARGETS _C LIBRARY DESTINATION mamba_cpu)

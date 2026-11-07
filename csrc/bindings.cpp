@@ -1,7 +1,7 @@
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
 
 #include <cstdint>
-#include <thread>
 
 #include "selective_scan.h"
 
@@ -16,6 +16,9 @@ static T* as_ptr(uintptr_t p) {
 
 NB_MODULE(_C, m) {
   m.doc() = "mamba_cpu native kernels";
+
+  m.def("cpu_isa", &mamba_cpu::cpu_isa);
+  m.def("set_cpu_isa", &mamba_cpu::set_cpu_isa, nb::arg("name"));
 
   m.def(
       "selective_scan_fwd_f32",

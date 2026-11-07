@@ -1,8 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace mamba_cpu {
+
+// Instruction set used by the kernels: "avx2" or "default". Picked at load time
+// from the CPU; set_cpu_isa("default" | "avx2" | "auto") overrides it and
+// returns false if the requested ISA isn't available.
+const char* cpu_isa();
+bool set_cpu_isa(const std::string& name);
 
 // All tensors are contiguous float32. Shapes:
 //   u, delta, z, out : (batch, dim, seqlen)

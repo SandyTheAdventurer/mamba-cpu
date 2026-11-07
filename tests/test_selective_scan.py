@@ -3,6 +3,8 @@ import torch
 
 from mamba_cpu import selective_scan_fn, selective_scan_ref
 
+pytestmark = pytest.mark.usefixtures("cpu_isa")
+
 
 def make_inputs(batch, dim, seqlen, dstate, ngroups, has_D, has_z, has_bias, dtype, requires_grad=False):
     g = torch.Generator().manual_seed(0)

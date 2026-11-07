@@ -10,7 +10,7 @@ import time
 
 import torch
 
-from mamba_cpu import selective_scan_fn, selective_scan_ref
+from mamba_cpu import _C, selective_scan_fn, selective_scan_ref
 
 
 def bench(fn, warmup=1, iters=5):
@@ -31,9 +31,12 @@ def main():
     p.add_argument("--threads", type=int, default=None)
     p.add_argument("--skip-ref", action="store_true")
     p.add_argument("--backward", action="store_true", help="time forward + backward")
+    p.add_argument("--isa", default="auto", help="kernel ISA: auto, default or avx2")
     args = p.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
+    if not _C.set_cpu_isa(args.isa):
+        p.error(f"ISA {args.isa!r} is not available on this CPU")
 
     b, d, l, n = args.batch, args.dim, args.seqlen, args.dstate
     u = torch.randn(b, d, l)
@@ -53,7 +56,7 @@ def main():
         return lambda: fn(*leaves, True).sum().backward()
 
     mode = "fwd+bwd" if args.backward else "fwd"
-    print(f"{mode}, shape b={b} d={d} l={l} n={n}, threads={torch.get_num_threads()}")
+    print(f"{mode}, shape b={b} d={d} l={l} n={n}, threads={torch.get_num_threads()}, isa={_C.cpu_isa()}")
     t_native = bench(run(selective_scan_fn))
     print(f"mamba_cpu  : {t_native * 1e3:9.2f} ms")
     if not args.skip_ref:

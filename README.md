@@ -52,7 +52,9 @@ Not supported yet: complex `A`, input-independent (2D) `B`/`C`, `seq_idx` in `ca
 
 - [x] Native backward for `selective_scan_fn`
 - [ ] Chunked recompute in backward to bound memory for very long sequences
-- [ ] SIMD (vectorized `exp`, AVX2/NEON dispatch) and a persistent thread pool
+- [x] SIMD: vectorized `exp`, runtime AVX2+FMA dispatch on x86 (baseline SSE2 / NEON otherwise)
+- [ ] Vectorize across channels instead of `dstate` (better for small `dstate` like 16)
+- [ ] Persistent thread pool (thread scaling flattens past ~4 threads)
 - [ ] Chunked parallel scan along time for small batch × long sequence
 - [ ] Mamba-2 SSD (`mamba_chunk_scan_combined`)
 - [ ] Native `selective_state_update` for low-latency decode
