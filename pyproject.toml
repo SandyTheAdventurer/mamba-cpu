@@ -21,6 +21,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+hf = ["transformers>=5"]
 test = ["pytest>=8"]
 
 [tool.scikit-build]

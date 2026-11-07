@@ -21,6 +21,22 @@ jobs:
       - name: Install CPU torch
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Build and install
+        run: pip install ".[test,hf]"
+      - name: Test
+        run: pytest -q
+
+  oldest-torch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install oldest supported torch
+        run: |
+          pip install "torch==2.4.1" --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy<2"
+      - name: Build and install
         run: pip install ".[test]"
       - name: Test
         run: pytest -q
