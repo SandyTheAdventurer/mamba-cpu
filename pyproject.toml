@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "mamba-cpu"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Multithreaded CPU kernels for Mamba selective state space models, API-compatible with mamba_ssm"
 readme = "README.md"
 requires-python = ">=3.10"
