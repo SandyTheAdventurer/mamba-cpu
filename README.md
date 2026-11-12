@@ -119,6 +119,15 @@ Layout:
 
 Wheels are built by `.github/workflows/wheels.yml` (cibuildwheel) and published to PyPI on a `v*` tag via [trusted publishing](https://docs.pypi.org/trusted-publishers/). One-time setup: add a pending publisher on PyPI for this repo with workflow `wheels.yml` and environment `pypi`, and create a `pypi` environment in the GitHub repo settings.
 
+To release: set `version` in `pyproject.toml` (e.g. `0.1.0`), commit, then
+
+```bash
+git tag v0.1.0
+git push origin main v0.1.0
+```
+
+The workflow refuses to publish if the tag and `pyproject.toml` version differ.
+
 ## License
 
 Apache-2.0
